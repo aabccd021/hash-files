@@ -47,7 +47,7 @@
     in
     {
 
-      packages.x86_64-linux = packages // rec {
+      packages.x86_64-linux = packages // devShells // {
         gcroot = pkgs.linkFarm "gcroot" packages;
       };
 
