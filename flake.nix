@@ -37,7 +37,7 @@
 
       formatter = treefmtEval.config.build.wrapper;
 
-      packages = {
+      packages = devShells // {
         formatting = treefmtEval.config.build.check self;
         formatter = formatter;
         hash_files = pkgs.hash_files;
@@ -47,7 +47,7 @@
     in
     {
 
-      packages.x86_64-linux = packages // devShells // {
+      packages.x86_64-linux = packages // {
         gcroot = pkgs.linkFarm "gcroot" packages;
       };
 
