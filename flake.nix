@@ -5,16 +5,19 @@
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   inputs.treefmt-nix.url = "github:numtide/treefmt-nix";
 
-  outputs = { self, ... }@inputs:
+  outputs =
+    { self, ... }@inputs:
     let
 
-      overlays.default = (final: prev: {
-        hash_files = final.writeShellApplication {
-          name = "hash_files";
-          runtimeInputs = [ final.jq ];
-          text = builtins.readFile ./hash_files.sh;
-        };
-      });
+      overlays.default = (
+        final: prev: {
+          hash_files = final.writeShellApplication {
+            name = "hash_files";
+            runtimeInputs = [ final.jq ];
+            text = builtins.readFile ./hash_files.sh;
+          };
+        }
+      );
 
       pkgs = import inputs.nixpkgs {
         system = "x86_64-linux";
@@ -23,11 +26,14 @@
 
       treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
         projectRootFile = "flake.nix";
-        programs.nixpkgs-fmt.enable = true;
+        programs.nixfmt.enable = true;
         programs.prettier.enable = true;
         programs.shfmt.enable = true;
         programs.shellcheck.enable = true;
-        settings.formatter.shellcheck.options = [ "-s" "sh" ];
+        settings.formatter.shellcheck.options = [
+          "-s"
+          "sh"
+        ];
         settings.global.excludes = [ "LICENSE" ];
       };
 
