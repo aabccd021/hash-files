@@ -27,6 +27,7 @@
       treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
         projectRootFile = "flake.nix";
         programs.nixfmt.enable = true;
+        programs.nixfmt.strict = true;
         programs.prettier.enable = true;
         programs.shfmt.enable = true;
         programs.shellcheck.enable = true;
@@ -37,9 +38,7 @@
         settings.global.excludes = [ "LICENSE" ];
       };
 
-      devShells.default = pkgs.mkShellNoCC {
-        buildInputs = [ pkgs.nixd ];
-      };
+      devShells.default = pkgs.mkShellNoCC { buildInputs = [ pkgs.nixd ]; };
 
       formatter = treefmtEval.config.build.wrapper;
 
