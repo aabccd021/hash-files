@@ -8,7 +8,7 @@
   outputs = { self, ... }@inputs:
     let
 
-      overlay = (final: prev: {
+      overlays.default = (final: prev: {
         hash_files = final.writeShellApplication {
           name = "hash_files";
           runtimeInputs = [ final.jq ];
@@ -18,7 +18,7 @@
 
       pkgs = import inputs.nixpkgs {
         system = "x86_64-linux";
-        overlays = [ overlay ];
+        overlays = [ overlays.default ];
       };
 
       treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
@@ -54,7 +54,7 @@
       checks.x86_64-linux = packages;
       formatter.x86_64-linux = formatter;
       devShells.x86_64-linux = devShells;
-      overlays.default = overlay;
+      overlays = overlays;
 
     };
 }
