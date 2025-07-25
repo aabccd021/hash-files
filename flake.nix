@@ -23,12 +23,30 @@
         );
 
       overlays.default = (
-        final: prev: {
+        final: prev:
+
+        let
           hash-files = final.runCommandLocal "hash-files" { } ''
             mkdir -p "$out/bin" 
             export XDG_CACHE_HOME="$PWD"
             ${final.go}/bin/go build -o "$out/bin/hash-files" ${./hash-files.go}
           '';
+
+          hash-files-watch = final.runCommandLocal "hash-files-watch" { } ''
+            mkdir -p "$out/bin" 
+            export XDG_CACHE_HOME="$PWD"
+            ${final.go}/bin/go build -o "$out/bin/hash-files-watch" ${./hash-files-watch.go}
+          '';
+
+        in
+        {
+          hash-files = final.symlinkJoin {
+            name = "hash-files";
+            paths = [
+              hash-files
+              hash-files-watch
+            ];
+          };
         }
       );
 
