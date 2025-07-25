@@ -24,10 +24,10 @@
 
       overlays.default = (
         final: prev: {
-          hash_files = final.writeShellApplication {
-            name = "hash_files";
+          hash-files = final.writeShellApplication {
+            name = "hash-files";
             runtimeInputs = [ final.jq ];
-            text = builtins.readFile ./hash_files.sh;
+            text = builtins.readFile ./hash-files.sh;
           };
         }
       );
@@ -60,8 +60,8 @@
         formatting = treefmtEval.config.build.check self;
         formatter = formatter;
         allInputs = collectInputs inputs;
-        hash_files = pkgs.hash_files;
-        default = pkgs.hash_files;
+        hash-files = pkgs.hash-files;
+        default = pkgs.hash-files;
       };
 
     in
