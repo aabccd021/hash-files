@@ -98,7 +98,7 @@ func main() {
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, "Updated: %s\n", hashFilename)
+			// fmt.Fprintf(os.Stderr, "Updated: %s\n", hashFilename)
 		}
 
 		outData, _ := json.MarshalIndent(mapping, "", "  ")
