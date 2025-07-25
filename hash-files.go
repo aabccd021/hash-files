@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 func main() {
@@ -28,8 +29,15 @@ func main() {
 	}
 
 	for {
+		var changedFile string
+
 		if *watch {
-			waitForCreateOrModify(*inputDir)
+			var err error
+			changedFile, err = waitForCreateOrModify(*inputDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to get changed file: %v\n", err)
+				continue
+			}
 		}
 
 		// Read mapping from outputJSON if it exists
@@ -38,14 +46,30 @@ func main() {
 			_ = json.Unmarshal(data, &mapping)
 		}
 
-		files, err := ioutil.ReadDir(*inputDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read %s: %v\n", *inputDir, err)
-			os.Exit(1)
+		var filesToProcess []os.FileInfo
+		if *watch {
+			// In watch mode, process only the changed file
+			if changedFile == "" {
+				continue // No file to process
+			}
+			fullPath := filepath.Join(*inputDir, changedFile)
+			fi, err := os.Stat(fullPath)
+			if err != nil || fi.IsDir() {
+				continue // Ignore if not found or is a directory
+			}
+			filesToProcess = []os.FileInfo{fi}
+		} else {
+			// Otherwise, process all files in the directory
+			files, err := ioutil.ReadDir(*inputDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to read %s: %v\n", *inputDir, err)
+				os.Exit(1)
+			}
+			filesToProcess = files
+			fmt.Fprintf(os.Stderr, "Found %d files in %s\n", len(files), *inputDir)
 		}
-		fmt.Fprintf(os.Stderr, "Found %d files in %s\n", len(files), *inputDir)
 
-		for _, fi := range files {
+		for _, fi := range filesToProcess {
 			if fi.IsDir() {
 				continue
 			}
@@ -64,7 +88,6 @@ func main() {
 
 			// Check if the hashFilename matches the mapping
 			if prev, exists := mapping[filename]; exists {
-				// If the mapping is up-to-date, skip
 				if prev == hashFilename {
 					continue
 				}
@@ -127,7 +150,8 @@ func copyFile(src, dst string) error {
 	return out.Sync()
 }
 
-func waitForCreateOrModify(dir string) {
+// Returns the changed filename (created/modified) in the watched directory, or "" if failed.
+func waitForCreateOrModify(dir string) (string, error) {
 	fd, err := syscall.InotifyInit()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "inotify init error: %v\n", err)
@@ -143,8 +167,26 @@ func waitForCreateOrModify(dir string) {
 	defer syscall.InotifyRmWatch(fd, uint32(wd))
 
 	var buf [4096]byte
-	_, err = syscall.Read(fd, buf[:])
+	n, err := syscall.Read(fd, buf[:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "inotify read error: %v\n", err)
+		return "", err
 	}
+	// inotify event struct: https://man7.org/linux/man-pages/man7/inotify.7.html
+	// struct inotify_event {
+	//   int      wd;
+	//   uint32_t mask;
+	//   uint32_t cookie;
+	//   uint32_t len;
+	//   char     name[];
+	// }
+	if n < 16 {
+		return "", nil
+	}
+	nameLen := *(*uint32)(unsafe.Pointer(&buf[12]))
+	if nameLen > 0 && int(16+nameLen) <= n {
+		name := string(buf[16 : 16+nameLen])
+		return strings.TrimRight(name, "\x00"), nil
+	}
+	return "", nil
 }
