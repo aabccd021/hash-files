@@ -32,7 +32,11 @@ func main() {
 			waitForCreateOrModify(*inputDir)
 		}
 
-		_ = ioutil.WriteFile(*outputJSON, []byte("{}"), 0644)
+		// Read mapping from outputJSON if it exists
+		mapping := make(map[string]string)
+		if data, err := ioutil.ReadFile(*outputJSON); err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &mapping)
+		}
 
 		files, err := ioutil.ReadDir(*inputDir)
 		if err != nil {
@@ -41,7 +45,6 @@ func main() {
 		}
 		fmt.Fprintf(os.Stderr, "Found %d files in %s\n", len(files), *inputDir)
 
-		mapping := make(map[string]string)
 		for _, fi := range files {
 			if fi.IsDir() {
 				continue
@@ -58,6 +61,15 @@ func main() {
 				continue
 			}
 			hashFilename := fmt.Sprintf("%s.%s.%s", filenameNoExt, hash, ext)
+
+			// Check if the hashFilename matches the mapping
+			if prev, exists := mapping[filename]; exists {
+				// If the mapping is up-to-date, skip
+				if prev == hashFilename {
+					continue
+				}
+			}
+
 			mapping[filename] = hashFilename
 
 			err = copyFile(fullPath, filepath.Join(*outputDir, hashFilename))
