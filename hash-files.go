@@ -28,29 +28,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	var fileEvents <-chan string
+	var stopFunc func()
+	if *watch {
+		fileEvents, stopFunc = watchDirEvents(*inputDir)
+		defer stopFunc()
+	}
+
 	for {
+		var filesToProcess []os.FileInfo
 		var changedFile string
 
 		if *watch {
-			var err error
-			changedFile, err = waitForCreateOrModify(*inputDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to get changed file: %v\n", err)
-				continue
-			}
-		}
-
-		// Read mapping from outputJSON if it exists
-		mapping := make(map[string]string)
-		if data, err := ioutil.ReadFile(*outputJSON); err == nil && len(data) > 0 {
-			_ = json.Unmarshal(data, &mapping)
-		}
-
-		var filesToProcess []os.FileInfo
-		if *watch {
-			// In watch mode, process only the changed file
+			// Wait for a file event
+			changedFile = <-fileEvents
 			if changedFile == "" {
-				continue // No file to process
+				continue
 			}
 			fullPath := filepath.Join(*inputDir, changedFile)
 			fi, err := os.Stat(fullPath)
@@ -59,14 +52,18 @@ func main() {
 			}
 			filesToProcess = []os.FileInfo{fi}
 		} else {
-			// Otherwise, process all files in the directory
 			files, err := ioutil.ReadDir(*inputDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to read %s: %v\n", *inputDir, err)
 				os.Exit(1)
 			}
 			filesToProcess = files
-			fmt.Fprintf(os.Stderr, "Found %d files in %s\n", len(files), *inputDir)
+		}
+
+		// Read mapping from outputJSON if it exists
+		mapping := make(map[string]string)
+		if data, err := ioutil.ReadFile(*outputJSON); err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &mapping)
 		}
 
 		for _, fi := range filesToProcess {
@@ -101,10 +98,8 @@ func main() {
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, "Copied %s to %s\n", filename, hashFilename)
+			fmt.Fprintf(os.Stderr, "Updated: %s\n", hashFilename)
 		}
-
-		fmt.Fprintf(os.Stderr, "Generated mapping: %v\n", mapping)
 
 		outData, _ := json.MarshalIndent(mapping, "", "  ")
 		_ = ioutil.WriteFile(*outputJSON, outData, 0644)
@@ -150,43 +145,53 @@ func copyFile(src, dst string) error {
 	return out.Sync()
 }
 
-// Returns the changed filename (created/modified) in the watched directory, or "" if failed.
-func waitForCreateOrModify(dir string) (string, error) {
+// Efficiently watches a directory for create/modify file events and sends filenames via channel.
+// Returns a channel and a stop function.
+func watchDirEvents(dir string) (<-chan string, func()) {
+	events := make(chan string)
 	fd, err := syscall.InotifyInit()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "inotify init error: %v\n", err)
 		os.Exit(1)
 	}
-	defer syscall.Close(fd)
-
 	wd, err := syscall.InotifyAddWatch(fd, dir, syscall.IN_CREATE|syscall.IN_MODIFY)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "inotify addwatch error: %v\n", err)
 		os.Exit(1)
 	}
-	defer syscall.InotifyRmWatch(fd, uint32(wd))
 
-	var buf [4096]byte
-	n, err := syscall.Read(fd, buf[:])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "inotify read error: %v\n", err)
-		return "", err
-	}
-	// inotify event struct: https://man7.org/linux/man-pages/man7/inotify.7.html
-	// struct inotify_event {
-	//   int      wd;
-	//   uint32_t mask;
-	//   uint32_t cookie;
-	//   uint32_t len;
-	//   char     name[];
-	// }
-	if n < 16 {
-		return "", nil
-	}
-	nameLen := *(*uint32)(unsafe.Pointer(&buf[12]))
-	if nameLen > 0 && int(16+nameLen) <= n {
-		name := string(buf[16 : 16+nameLen])
-		return strings.TrimRight(name, "\x00"), nil
-	}
-	return "", nil
+	stop := make(chan struct{})
+	go func() {
+		defer func() {
+			syscall.InotifyRmWatch(fd, uint32(wd))
+			syscall.Close(fd)
+			close(events)
+		}()
+		var buf [4096]byte
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			n, err := syscall.Read(fd, buf[:])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "inotify read error: %v\n", err)
+				return
+			}
+			var offset uint32
+			for offset+syscall.SizeofInotifyEvent <= uint32(n) {
+				raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+				nameBytes := buf[offset+syscall.SizeofInotifyEvent : offset+syscall.SizeofInotifyEvent+raw.Len]
+				// Remove trailing null bytes from name
+				name := strings.TrimRight(string(nameBytes), "\x00")
+				if raw.Mask&(syscall.IN_CREATE|syscall.IN_MODIFY) != 0 && name != "" {
+					events <- name
+				}
+				offset += syscall.SizeofInotifyEvent + raw.Len
+			}
+		}
+	}()
+	stopFunc := func() { close(stop) }
+	return events, stopFunc
 }
