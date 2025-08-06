@@ -26,10 +26,21 @@
         final: prev:
 
         let
+
           hash-files = final.runCommandLocal "hash-files" { } ''
             mkdir -p "$out/bin" 
             export XDG_CACHE_HOME="$PWD"
-            ${final.go}/bin/go build -o "$out/bin/hash-files" ${./hash-files.go}
+            ${final.go}/bin/go build -ldflags="-s -w" -o "$out/bin/hash-files" ${./hash-files.go}
+          '';
+
+          hash-files-zig = final.runCommandLocal "hash-files-zig" { } ''
+            mkdir -p "$out/bin" 
+            ${final.zig}/bin/zig build-exe \
+              --cache-dir "$TEMP" \
+              --global-cache-dir "$TEMP" \
+              -femit-bin="$out/bin/hash-files-zig" \
+              -O ReleaseSmall \
+              ${./hash-files.zig}
           '';
 
           hash-files-watch = final.runCommandLocal "hash-files-watch" { } ''
@@ -44,6 +55,7 @@
             name = "hash-files";
             paths = [
               hash-files
+              hash-files-zig
               hash-files-watch
             ];
           };
