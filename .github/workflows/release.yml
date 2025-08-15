@@ -1,0 +1,18 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+      - run: go build -ldflags="-s -w" -o hash-files ./hash-files.go
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: hash-files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
